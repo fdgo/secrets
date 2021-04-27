@@ -230,3 +230,23 @@ func GroupDelete(c *gin.Context) {
 	}
 	response.RespSuccess(c, "ok", "request send ok!")
 }
+func GroupMembers(c *gin.Context) {
+	groupId, _ := strconv.ParseInt(c.Param("groupId"), 10, 64)
+	userdao := usersrv.NewUserGroupDao()
+	err, users := userdao.GroupMembers(groupId)
+	if err != nil {
+		response.RespFailed(c, constex.ERROR_PARAM_ERROR, "", err.Error())
+		return
+	}
+	response.RespSuccess(c, users, "ok")
+}
+func UserGroups(c *gin.Context) {
+	userId, _ := strconv.ParseInt(c.Param("userId"), 10, 64)
+	userdao := usersrv.NewUserGroupDao()
+	err, users := userdao.UserGroups(userId)
+	if err != nil {
+		response.RespFailed(c, constex.ERROR_PARAM_ERROR, "", err.Error())
+		return
+	}
+	response.RespSuccess(c, users, "ok")
+}

@@ -1,11 +1,8 @@
 package user
 
 import (
-	"bytes"
 	"errors"
 	"github.com/jinzhu/gorm"
-	"io"
-	"net/http"
 	"secret/initial"
 	mysqluser "secret/model/mysql/user"
 	"secret/model/response/user"
@@ -13,7 +10,6 @@ import (
 	"secret/utils/rand"
 	"secret/utils/sign/md5"
 	"secret/utils/snakesnow"
-	"time"
 )
 
 type UserGroupDao struct {
@@ -388,80 +384,50 @@ func (ugdao *UserGroupDao) QueryGroupMembers(groupid string) ([]mysqluser.TbUser
 }
 
 //查看某人有多少群
-func (ugdao *UserGroupDao) QueryGroups(userid string) ([]mysqluser.TbGroup, error) {
+func (ugdao *UserGroupDao) UserGroups(userid int64) (error, []mysqluser.TbGroup) {
 	tx := ugdao.db.Begin()
 	var useradv mysqluser.TbUser
 	err := tx.Where("user_id=?", userid).Find(&useradv).Error
 	if err != nil {
 		tx.Rollback()
-		return []mysqluser.TbGroup{}, err
+		return err, []mysqluser.TbGroup{}
 	}
 	var groups []mysqluser.TbGroup
 	err = tx.Model(&useradv).Association("Group").Find(&groups).Error
 	if err != nil {
 		tx.Rollback()
-		return []mysqluser.TbGroup{}, err
+		return err, []mysqluser.TbGroup{}
 	}
 	err = tx.Commit().Error
 	if err != nil {
 		tx.Rollback()
-		return []mysqluser.TbGroup{}, err
+		return err, []mysqluser.TbGroup{}
 	}
-	return groups, nil
+	return nil, groups
 }
-func getid() string {
-	return Get("http://127.0.0.1:8182/worker/100")
-}
-
-func Get(url string) string {
-	// 超时时间：5秒
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(url)
-	if err != nil {
-		panic(err)
-	}
-	defer resp.Body.Close()
-	var buffer [512]byte
-	result := bytes.NewBuffer(nil)
-	for {
-		n, err := resp.Body.Read(buffer[0:])
-		result.Write(buffer[0:n])
-		if err != nil && err == io.EOF {
-			break
-		} else if err != nil {
-			panic(err)
+func (ugdao *UserGroupDao) GroupMembers(groupId int64) (error, []mysqluser.TbUser) {
+	var group mysqluser.TbGroup
+	tx := ugdao.db.Begin()
+	err := tx.Where("group_id=?", groupId).Find(&group).Error
+	if err == gorm.ErrRecordNotFound {
+		tx.Rollback()
+		return err, []mysqluser.TbUser{}
+	} else {
+		if err != nil {
+			tx.Rollback()
+			return err, []mysqluser.TbUser{}
 		}
+		var users []mysqluser.TbUser
+		err := ugdao.db.Model(&group).Association("User").Find(&users).Error
+		if err != nil {
+			tx.Rollback()
+			return err, []mysqluser.TbUser{}
+		}
+		err = tx.Commit().Error
+		if err != nil {
+			tx.Rollback()
+			return err, []mysqluser.TbUser{}
+		}
+		return nil, users
 	}
-	return result.String()
-}
-
-func main() {
-	//ugdao := NewUserGroupDao()
-	//创建用户
-	//ugdao.CreateUser("用户1")
-	//ugdao.CreateUser("用户2")
-	//ugdao.CreateUser("用户3")
-	//ugdao.CreateUser("用户4")
-	//ugdao.CreateUser("用户5")
-	//ugdao.CreateGroupAddUseradvs("GtGG2b34jjCTPfpdXr3B8Y", "7o的群",  "GtGG2b34jjCTPfpdXr3B8Y", "pBusisx4DFwrYhytHojy3G") // 创建新群同时拉进用户
-	//ugdao.AddUseradvsToExistGroup("oV6ZPRwtZpo8jrTnswhAPh", "1rCJjaRpg0XvI1NeTJDPLNJxjNg", "mQxjZq8ecUTiA7XZu3DMN") // 拉用户进群
-	//ugdao.KickoutUseradvs("oV6ZPRwtZpo8jrTnswhAPh", "1rCJjaRpg0XvI1NeTJDPLNJxjNg", "vWqAD5tP3ZKWJUUmn8GUXC") //用户剔除群
-	//ugdao.DeleteGroup("1rCJjaRpg0XvI1NeTJDPLNJxjNg") //群解散
-	//groups,err := ugdao.QueryGroups("7o8dTgNNLK9WWyzULoe9ti")
-	//if err != nil {
-	//	return
-	//}
-	//fmt.Println(groups)
-	//users, err := ugdao.QueryGroupMembers("1rEV2rm7iDtRwfJnTPatF8vXRby")
-	//if err != nil {
-	//	return
-	//}
-	//fmt.Println(users)
-}
-func (ugdao *UserGroupDao) Test(id int64) {
-	//var test mysql.TbTest
-	//test.Test = id
-	//if err := ugdao.db.Save(&test).Error; err != nil {
-	//	return
-	//}
 }
