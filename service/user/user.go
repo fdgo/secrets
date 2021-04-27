@@ -31,10 +31,12 @@ func (ugdao *UserGroupDao) Regist(mail, pwd string) (error, int64, int64) {
 	if err == gorm.ErrRecordNotFound {
 		UserId, err := snakesnow.RandUserId()
 		if err != nil {
+			tx.Rollback()
 			return errors.New("生成用户id失败!"), 0, 0
 		}
 		DevId, err := snakesnow.RandDeviceId()
 		if err != nil {
+			tx.Rollback()
 			return errors.New("生成设备id失败!"), 0, 0
 		}
 		var user mysqluser.TbUser
@@ -59,8 +61,10 @@ func (ugdao *UserGroupDao) Regist(mail, pwd string) (error, int64, int64) {
 		return nil, UserId, DevId
 	} else {
 		if err != nil {
+			tx.Rollback()
 			return errors.New("server is busy!"), 0, 0
 		}
+		tx.Rollback()
 		return errors.New("user is exist!"), 0, 0
 	}
 }
@@ -203,32 +207,37 @@ func (ugdao *UserGroupDao) GroupJoinFriend(creatid, groupid int64, users ...inte
 	}
 	var group mysqluser.TbGroup
 	err = tx.Where("group_id=?", groupid).Find(&group).Error
-	if err != nil {
+	if err == gorm.ErrRecordNotFound {
 		tx.Rollback()
 		return err
-	}
-	var creatname string
-	for _, u := range useradvs {
-		if u.UserId == creatid {
-			creatname = u.UserName
-		}
-		err = tx.Model(&u).Association("Group").Append(mysqluser.TbGroup{GroupId: group.GroupId, GroupName: group.GroupName, CreatedId: creatid, CreatedName: creatname}).Error
+	} else {
 		if err != nil {
 			tx.Rollback()
 			return err
 		}
-		err = tx.Model(&group).Association("User").Append(mysqluser.TbUser{UserId: u.UserId, UserName: u.UserName}).Error
+		var creatname string
+		for _, u := range useradvs {
+			if u.UserId == creatid {
+				creatname = u.UserName
+			}
+			err = tx.Model(&u).Association("Group").Append(mysqluser.TbGroup{GroupId: group.GroupId, GroupName: group.GroupName, CreatedId: creatid, CreatedName: creatname}).Error
+			if err != nil {
+				tx.Rollback()
+				return err
+			}
+			err = tx.Model(&group).Association("User").Append(mysqluser.TbUser{UserId: u.UserId, UserName: u.UserName}).Error
+			if err != nil {
+				tx.Rollback()
+				return err
+			}
+		}
+		err = tx.Commit().Error
 		if err != nil {
 			tx.Rollback()
 			return err
 		}
+		return nil
 	}
-	err = tx.Commit().Error
-	if err != nil {
-		tx.Rollback()
-		return err
-	}
-	return nil
 }
 
 //获取所有设备号
@@ -296,28 +305,33 @@ func (ugdao *UserGroupDao) GroupKickOutFriend(groupid int64, users ...interface{
 	}
 	var group mysqluser.TbGroup
 	err = tx.Where("group_id=?", groupid).Find(&group).Error
-	if err != nil {
+	if err == gorm.ErrRecordNotFound {
 		tx.Rollback()
 		return err
-	}
-	for _, u := range useradvs {
-		err = tx.Model(&u).Association("Group").Delete(mysqluser.TbGroup{GroupId: group.GroupId}).Error
+	} else {
 		if err != nil {
 			tx.Rollback()
 			return err
 		}
-		err = tx.Model(&group).Association("User").Delete(mysqluser.TbUser{UserId: u.UserId}).Error
+		for _, u := range useradvs {
+			err = tx.Model(&u).Association("Group").Delete(mysqluser.TbGroup{GroupId: group.GroupId}).Error
+			if err != nil {
+				tx.Rollback()
+				return err
+			}
+			err = tx.Model(&group).Association("User").Delete(mysqluser.TbUser{UserId: u.UserId}).Error
+			if err != nil {
+				tx.Rollback()
+				return err
+			}
+		}
+		err = tx.Commit().Error
 		if err != nil {
 			tx.Rollback()
 			return err
 		}
+		return nil
 	}
-	err = tx.Commit().Error
-	if err != nil {
-		tx.Rollback()
-		return err
-	}
-	return nil
 }
 
 //删除群
@@ -325,62 +339,44 @@ func (ugdao *UserGroupDao) DeleteGroup(groupid int64) error {
 	tx := ugdao.db.Begin()
 	var group mysqluser.TbGroup
 	err := tx.Where("group_id=?", groupid).Find(&group).Error
-	if err != nil {
+	if err == gorm.ErrRecordNotFound {
 		tx.Rollback()
 		return err
-	}
-	var useradvs []mysqluser.TbUser
-	err = tx.Model(&group).Association("User").Find(&useradvs).Error
-	if err != nil {
-		tx.Rollback()
-		return err
-	}
-	for _, u := range useradvs {
-		err = tx.Model(&u).Association("Group").Delete(mysqluser.TbGroup{GroupId: group.GroupId}).Error
+	} else {
 		if err != nil {
 			tx.Rollback()
 			return err
 		}
-		err = tx.Model(&group).Association("User").Delete(mysqluser.TbUser{UserId: u.UserId}).Error
+		var useradvs []mysqluser.TbUser
+		err = tx.Model(&group).Association("User").Find(&useradvs).Error
 		if err != nil {
 			tx.Rollback()
 			return err
 		}
+		for _, u := range useradvs {
+			err = tx.Model(&u).Association("Group").Delete(mysqluser.TbGroup{GroupId: group.GroupId}).Error
+			if err != nil {
+				tx.Rollback()
+				return err
+			}
+			err = tx.Model(&group).Association("User").Delete(mysqluser.TbUser{UserId: u.UserId}).Error
+			if err != nil {
+				tx.Rollback()
+				return err
+			}
+		}
+		err = tx.Where("group_id=?", groupid).Delete(&mysqluser.TbGroup{}).Error
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+		err = tx.Commit().Error
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+		return nil
 	}
-	err = tx.Where("group_id=?", groupid).Delete(&mysqluser.TbGroup{}).Error
-	if err != nil {
-		tx.Rollback()
-		return err
-	}
-	err = tx.Commit().Error
-	if err != nil {
-		tx.Rollback()
-		return err
-	}
-	return nil
-}
-
-//查看群里成员
-func (ugdao *UserGroupDao) QueryGroupMembers(groupid string) ([]mysqluser.TbUser, error) {
-	tx := ugdao.db.Begin()
-	var group mysqluser.TbGroup
-	err := tx.Where("group_id=?", groupid).Find(&group).Error
-	if err != nil {
-		tx.Rollback()
-		return []mysqluser.TbUser{}, err
-	}
-	var useradvs []mysqluser.TbUser
-	err = tx.Model(&group).Association("User").Find(&useradvs).Error
-	if err != nil {
-		tx.Rollback()
-		return []mysqluser.TbUser{}, err
-	}
-	err = tx.Commit().Error
-	if err != nil {
-		tx.Rollback()
-		return []mysqluser.TbUser{}, err
-	}
-	return useradvs, nil
 }
 
 //查看某人有多少群
@@ -388,23 +384,30 @@ func (ugdao *UserGroupDao) UserGroups(userid int64) (error, []mysqluser.TbGroup)
 	tx := ugdao.db.Begin()
 	var useradv mysqluser.TbUser
 	err := tx.Where("user_id=?", userid).Find(&useradv).Error
-	if err != nil {
+	if err == gorm.ErrRecordNotFound {
 		tx.Rollback()
 		return err, []mysqluser.TbGroup{}
+	} else {
+		if err != nil {
+			tx.Rollback()
+			return err, []mysqluser.TbGroup{}
+		}
+		var groups []mysqluser.TbGroup
+		err = tx.Model(&useradv).Association("Group").Find(&groups).Error
+		if err != nil {
+			tx.Rollback()
+			return err, []mysqluser.TbGroup{}
+		}
+		err = tx.Commit().Error
+		if err != nil {
+			tx.Rollback()
+			return err, []mysqluser.TbGroup{}
+		}
+		return nil, groups
 	}
-	var groups []mysqluser.TbGroup
-	err = tx.Model(&useradv).Association("Group").Find(&groups).Error
-	if err != nil {
-		tx.Rollback()
-		return err, []mysqluser.TbGroup{}
-	}
-	err = tx.Commit().Error
-	if err != nil {
-		tx.Rollback()
-		return err, []mysqluser.TbGroup{}
-	}
-	return nil, groups
 }
+
+//查看群里成员
 func (ugdao *UserGroupDao) GroupMembers(groupId int64) (error, []mysqluser.TbUser) {
 	var group mysqluser.TbGroup
 	tx := ugdao.db.Begin()
