@@ -1,0 +1,26 @@
+mysql:
+  url: root:000000@tcp(192.168.204.129:3306)/baiy?charset=utf8mb4&parseTime=True&loc=Local
+  maxIdleConnection: 100
+  maxOpenConnection: 130
+redis:
+  enabled: true
+  conn: 192.168.204.129:6379
+  dbNum: 8
+  password:
+  timeout: 3000
+  sentinel:
+    enabled: false
+    master: baiy
+    nodes: 127.0.0.1:16379,127.0.0.1:26379,127.0.0.1:36379
+rediscluster:
+  ip: 192.168.204.128:6379,192.168.204.128:6379,192.168.204.128:6379,192.168.204.128:6379,192.168.204.128:6379,192.168.204.128:6379
+jwt:
+  secretKey: W6VjDud2W1kMG3BicbMNlGgI4ZfcoHtMGLWr
+  exptime: 2592000
+page:
+  pagesize: 20
+  pageindex: 1
+newregister:
+  hour: 864000
+http:
+  port: 8088
